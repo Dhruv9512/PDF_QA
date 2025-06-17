@@ -48,14 +48,14 @@ collection_name = "pdf_documents"
 
 
 # ===================== Model Initialization =====================
-ollama_llm = OllamaLLM(model="llama3.1")
-# ollama_llm =ChatGoogleGenerativeAI(
-#     model="gemini-2.0-flash",
-#     temperature=0.7,
-#     google_api_key=os.environ.get("GOOGLE_API_KEY"),
-# )
-ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text")
-# ollama_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+# ollama_llm = OllamaLLM(model="llama3.1")
+ollama_llm =ChatGoogleGenerativeAI(
+    model="gemini-2.0-flash",
+    temperature=0.7,
+    google_api_key=os.environ.get("GOOGLE_API_KEY"),
+)
+# ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text")
+ollama_embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 Groq_llm = ChatGroq(model="llama3-8b-8192")
 
 # ===================== Global =====================
