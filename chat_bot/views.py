@@ -30,7 +30,6 @@ from typing import Annotated
 from typing_extensions import TypedDict
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from xhtml2pdf import pisa
 import vercelpy.blob_store as blob_store
 from .email_tasks import send_email_task
 
@@ -185,6 +184,7 @@ def srart_graph(state: StateGraphExecutor):
     return {"Ans": state["Ans"] + all_answers}
 
 def call_pdf_genrater(state):
+    from xhtml2pdf import pisa
     questions = state["messages"][0].content
     answers = state["Ans"]
     markdown_content = "# 📝 Question-Answer Report\n\n"
