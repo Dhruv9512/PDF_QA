@@ -29,6 +29,7 @@ langchain-google-genai
 langchain-groq
 langchain-ollama
 langchain-qdrant
+langgraph 
 
 # === Vector Database ===
 qdrant-client
