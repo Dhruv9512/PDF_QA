@@ -211,7 +211,8 @@ def qus_loading(state: StateGraphExecutor):
 
 def trigger_send_email_task(state: StateGraphExecutor):
     print("PDF URL to send:", state["FinalPdf"])
-    send_email_task.apply_async(args=[str(state["FinalPdf"])])
+    # send_email_task.apply_async(args=[str(state["FinalPdf"])])
+    send_email_task(state["FinalPdf"])
 
 # ===================== Main Graph =====================
 main_builder = StateGraph(StateGraphExecutor)
