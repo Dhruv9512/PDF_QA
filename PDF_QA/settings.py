@@ -29,7 +29,7 @@ SECRET_KEY = "django-insecure-!)t+)(oudd27m301nfp&apdrov1w@0b8xw&u1h@rdu&3iaefvc
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['pdf-qa-k8w7.onrender.com']
 
 
 
@@ -49,7 +49,7 @@ CELERY_TASK_SERIALIZER = 'json'
 
 # Corrected SSL Configuration for Redis
 CELERY_BROKER_USE_SSL = {
-    'ssl_cert_reqs': None  # Use None instead of 'CERT_NONE'
+    'ssl_cert_reqs': None 
 }
 
 # Ensures Celery retries broker connection on startup
@@ -165,3 +165,39 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# CORS Configuration
+CORS_ALLOWED_ORIGINS = [
+    # Frontend in development
+    'https://pdf-qa-k8w7.onrender.com',  # Backend hosted on Render
+    # Frontend hosted on Netlify
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    # Frontend in development
+    #frontend hosted on netlify
+]
+
+# Secure CSRF cookie settings
+CSRF_COOKIE_SECURE = False 
+CSRF_COOKIE_SAMESITE = 'Strict'  
+
+# CORS allow credentials and headers
+CORS_ALLOW_CREDENTIALS = True
+CORS_EXPOSE_HEADERS = ['Content-Type', 'Authorization']
+CORS_ALLOW_HEADERS = [
+    'content-type',
+    'authorization',
+    'x-csrftoken',
+]
+
+# Security headers (optional for production)
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_HSTS_SECONDS = 3600
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+
+# Enable SSL headers for proxy setup in production
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
