@@ -9,7 +9,7 @@ from langchain.docstore.document import Document
 from qdrant_client import QdrantClient
 from dotenv import load_dotenv
 from qdrant_client.models import VectorParams, Distance
-from langchain.vectorstores import Qdrant
+from langchain_community.vectorstores import Qdrant
 from langchain_ollama import OllamaEmbeddings
 from langchain_ollama.llms import OllamaLLM
 from langchain.text_splitter import RecursiveCharacterTextSplitter

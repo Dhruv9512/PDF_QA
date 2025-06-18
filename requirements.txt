@@ -5,6 +5,7 @@ langchain-community
 langchain-ollama
 qdrant-client
 langchain-qdrant
+langchain_groq
 django
 PyPDF2
 reportlab
