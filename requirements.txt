@@ -17,3 +17,4 @@ celery
 djangorestframework
 djangorestframework-simplejwt
 langchain-google-genai
+gunicorn
