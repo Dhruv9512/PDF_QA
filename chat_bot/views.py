@@ -9,7 +9,6 @@ from typing_extensions import TypedDict
 from .main_graph_builder import main_graph
 
 # ===================== Global =====================
-pdf_id = None
 collection_name = "pdf_documents"
 
 # ===================== Django APIView =====================
@@ -26,7 +25,8 @@ class pdf(APIView):
             "messages": []
         }
         try:
-            main_graph.invoke(input_grapg)
+            output =main_graph.invoke(input_grapg)
+            pdf_id = output.get("pdf_id")
             return Response({"message": "Process started", "status": "success", "pdf_id": pdf_id}, status=200)
         except Exception as e:
             return Response({"error": str(e)}, status=500)

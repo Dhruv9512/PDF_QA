@@ -8,7 +8,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.agents import Tool
 import vercelpy.blob_store as blob_store
+import json
 
+global pdf_id
 def get_qdrant_client():
     from qdrant_client import QdrantClient
     return QdrantClient(
@@ -39,6 +41,40 @@ def load_pdf(pdf_bytes: bytes):
     pdf_id = str(uuid.uuid4())
     reader = PdfReader(pdf_bytes)
     return [Document(page_content=p.extract_text(), metadata={"page": i+1, "pdf_id": pdf_id}) for i, p in enumerate(reader.pages)]
+
+
+
+def extract_content(msg):
+    from langchain_core.messages import BaseMessage
+
+    if isinstance(msg, BaseMessage):
+        return msg.content or ""
+
+    elif isinstance(msg, dict):
+        return msg.get("content", "") or ""
+
+    elif isinstance(msg, str):
+        # Try to decode a stringified JSON list
+        try:
+            parsed = json.loads(msg)
+            if isinstance(parsed, list):
+                return "\n\n".join(
+                    f"🔹 {item.get('title', '').strip()}\n{item.get('content', '').strip()}\n🔗 {item.get('url', '').strip()}"
+                    for item in parsed if isinstance(item, dict)
+                )
+            else:
+                return msg.strip()
+        except json.JSONDecodeError:
+            return msg.strip()
+
+    elif isinstance(msg, list):
+        return "\n\n".join(
+            f"🔹 {item.get('title', '').strip()}\n{item.get('content', '').strip()}\n🔗 {item.get('url', '').strip()}"
+            for item in msg if isinstance(item, dict)
+        )
+
+    return str(msg)
+
 
 def upload_to_qdrant(documents, collection_name):
     from langchain_community.vectorstores import Qdrant
@@ -72,16 +108,19 @@ def extract_questions(documents):
             all_questions.append({"question": question_text, "marks": marks, **doc.metadata})
     return all_questions
 
+
+
 prompt = ChatPromptTemplate.from_messages([
-    ("system", """
-You are a helpful academic assistant. Use retrieval_answer (~80%) and tavily_answer (~20%) to generate structured answers.
+    ("system", "You are a helpful academic assistant."),
+    ("user", """
+Use retrieval_answer (~80%) and tavily_answer (~20%) to generate structured answers.
 Adjust depth based on marks: short (1–2), medium (3–5), detailed (>5). Include code if relevant.
 Format:
 ---
 **Question:** {question}
 **Marks:** {marks}
-**Retrieval-based Answer:**  {retrieval_answer}
-**Tavily Answer:**  {tavily_answer}
+**Retrieval-based Answer:** {retrieval_answer}
+**Tavily Answer:** {tavily_answer}
 **Combined Answer:**
 - Introduction
 - Diagram
@@ -92,6 +131,7 @@ Format:
 ---
 """)
 ])
+
 
 class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
@@ -107,7 +147,11 @@ def run_llm_with_tools(state: State):
         Tool.from_function(TavilySearchResults().invoke, name="TavilySearch", description="Web search tool.")
     ]
     llm_with_tools = llm.bind_tools(tools)
-    return {"messages": state["messages"] + [llm_with_tools.invoke(state["messages"]) ]}
+
+    # Use .generate() to avoid structured tool call format
+    result = llm_with_tools.generate([state["messages"]])
+    message = result.generations[0][0].message  # Extract the message
+    return {"messages": state["messages"] + [message]}
 
 def get_retriever(embeddings):
     from langchain_community.vectorstores import Qdrant
@@ -137,14 +181,21 @@ def ToolExecutor(state: State):
 def format_answer(state: State):
     llm = get_llm()
     chain = prompt | llm
+
+    question = extract_content(state["messages"][0])
+    retrieval_answer = extract_content(state["messages"][-2])
+    tavily_answer = extract_content(state["messages"][-1])
+    marks = state["marks"] if isinstance(state["marks"], int) else extract_content(state["marks"])
+
     input_data = {
-        "question": state["messages"][0].content,
-        "marks": state["marks"],
-        "retrieval_answer": state["messages"][-2].content,
-        "tavily_answer": state["messages"][-1].content
+        "question": question,
+        "marks": marks,
+        "retrieval_answer": retrieval_answer,
+        "tavily_answer": tavily_answer
     }
     result = chain.invoke(input_data)
     return {"messages": state["messages"] + [result]}
+
 
 Builder = StateGraph(State)
 Builder.add_node("LLM_with_tools", run_llm_with_tools)
@@ -163,6 +214,7 @@ class StateGraphExecutor(TypedDict):
     QuePdf: bytes
     collection_name: str
     FinalPdf: str
+    pdf_id: str
 
 def srart_graph(state: StateGraphExecutor):
     questions = state["messages"][-1].content
@@ -192,7 +244,10 @@ def call_pdf_genrater(state):
 
 def Referal_PDF_to_Qdrant(state: StateGraphExecutor):
     docs = load_pdf(state["Referal"])
+    pdf_id= docs[0].metadata.get("pdf_id")
     upload_to_qdrant(docs, state["collection_name"])
+    return {**state, "pdf_id": pdf_id}
+
 
 def qus_loading(state: StateGraphExecutor):
     docs = load_pdf(state["QuePdf"])

@@ -29,7 +29,7 @@ SECRET_KEY = "django-insecure-!)t+)(oudd27m301nfp&apdrov1w@0b8xw&u1h@rdu&3iaefvc
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['pdf-qa-k8w7.onrender.com']
+ALLOWED_HOSTS = ['pdf-qa-k8w7.onrender.com','127.0.0.1', 'localhost']
 
 
 
@@ -172,11 +172,15 @@ CORS_ALLOWED_ORIGINS = [
     # Frontend in development
     'https://pdf-qa-k8w7.onrender.com',  # Backend hosted on Render
     # Frontend hosted on Netlify
+    "http://127.0.0.1:8000", 
+    "http://localhost:8000",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     # Frontend in development
     #frontend hosted on netlify
+    "http://127.0.0.1:8000", 
+    "http://localhost:8000",
 ]
 
 # Secure CSRF cookie settings
