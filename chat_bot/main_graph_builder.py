@@ -218,11 +218,24 @@ class StateGraphExecutor(TypedDict):
 
 def srart_graph(state: StateGraphExecutor):
     questions = state["messages"][-1].content
-    all_answers = []
-    for q in questions:
-        result = graph.invoke({"messages": [{"role": "user", "content": q["question"]}], "marks": str(q.get("marks"))})
-        all_answers.append({"role": "assistant", "content": result["messages"][-1].content})
+
+    # ✅ Prepare batch inputs
+    batch_inputs = [
+        {"messages": [{"role": "user", "content": q["question"]}], "marks": str(q.get("marks"))}
+        for q in questions
+    ]
+
+    # ✅ Run graph in batch
+    results = graph.batch(batch_inputs)
+
+    # ✅ Extract and store answers
+    all_answers = [
+        {"role": "assistant", "content": res["messages"][-1].content}
+        for res in results
+    ]
+
     return {"Ans": state["Ans"] + all_answers}
+
 
 def call_pdf_genrater(state):
     import markdown
