@@ -1,6 +1,13 @@
-import os, io, re, uuid, markdown
+import os, io, re, uuid
 from typing import Annotated
 from typing_extensions import TypedDict
+from langchain_core.messages import AnyMessage
+from langgraph.graph.message import add_messages
+from langgraph.graph import StateGraph, START, END
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.agents import Tool
+import vercelpy.blob_store as blob_store
 
 def get_qdrant_client():
     from qdrant_client import QdrantClient
@@ -65,15 +72,6 @@ def extract_questions(documents):
             all_questions.append({"question": question_text, "marks": marks, **doc.metadata})
     return all_questions
 
-from langchain_core.messages import AnyMessage
-from langgraph.graph.message import add_messages
-from langgraph.graph import StateGraph, START, END
-from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.agents import Tool
-from langchain_community.tools.tavily_search import TavilySearchResults
-import vercelpy.blob_store as blob_store
-
 prompt = ChatPromptTemplate.from_messages([
     ("system", """
 You are a helpful academic assistant. Use retrieval_answer (~80%) and tavily_answer (~20%) to generate structured answers.
@@ -100,6 +98,7 @@ class State(TypedDict):
     marks: int
 
 def run_llm_with_tools(state: State):
+    from langchain_community.tools.tavily_search import TavilySearchResults
     embeddings = get_embeddings()
     retriever = get_retriever(embeddings)
     llm = get_groq_llm()
@@ -108,13 +107,14 @@ def run_llm_with_tools(state: State):
         Tool.from_function(TavilySearchResults().invoke, name="TavilySearch", description="Web search tool.")
     ]
     llm_with_tools = llm.bind_tools(tools)
-    return {"messages": state["messages"] + [llm_with_tools.invoke(state["messages"])]}
+    return {"messages": state["messages"] + [llm_with_tools.invoke(state["messages"]) ]}
 
 def get_retriever(embeddings):
     from langchain_community.vectorstores import Qdrant
     return Qdrant(client=get_qdrant_client(), collection_name="pdf_documents", embeddings=embeddings).as_retriever()
 
 def ToolExecutor(state: State):
+    from langchain_community.tools.tavily_search import TavilySearchResults
     retriever = get_retriever(get_embeddings())
     rag_tool = Tool.from_function(retriever.invoke, name="RAG", description="PDF Tool")
     tavily_tool = Tool.from_function(TavilySearchResults().invoke, name="Tavily", description="Web Search")
@@ -173,10 +173,11 @@ def srart_graph(state: StateGraphExecutor):
     return {"Ans": state["Ans"] + all_answers}
 
 def call_pdf_genrater(state):
+    import markdown
     from xhtml2pdf import pisa
     questions = state["messages"][0].content
     answers = state["Ans"]
-    markdown_content = "# 📝 Question-Answer Report\n\n"
+    markdown_content = "# 📜 Question-Answer Report\n\n"
     for i, a in enumerate(answers):
         q_text = questions[i].get("question")
         a_text = a.content if hasattr(a, 'content') else a
