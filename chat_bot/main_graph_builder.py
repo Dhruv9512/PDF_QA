@@ -217,22 +217,31 @@ class StateGraphExecutor(TypedDict):
     pdf_id: str
 
 def srart_graph(state: StateGraphExecutor):
+    import time
     questions = state["messages"][-1].content
-
-    # ✅ Prepare batch inputs
     batch_inputs = [
         {"messages": [{"role": "user", "content": q["question"]}], "marks": str(q.get("marks"))}
         for q in questions
     ]
 
-    # ✅ Run graph in batch
-    results = graph.batch(batch_inputs)
+    all_answers = []
+    batch_size = 5  # You can adjust based on memory
 
-    # ✅ Extract and store answers
-    all_answers = [
-        {"role": "assistant", "content": res["messages"][-1].content}
-        for res in results
-    ]
+    for i in range(0, len(batch_inputs), batch_size):
+        batch = batch_inputs[i:i + batch_size]
+        try:
+            print(f"⚙️ Processing batch {i // batch_size + 1} with {len(batch)} items", flush=True)
+            results = graph.batch(batch)
+            all_answers.extend([
+                {"role": "assistant", "content": res["messages"][-1].content}
+                for res in results
+            ])
+        except Exception as e:
+            import traceback
+            print("❌ Error in graph.batch:", e, flush=True)
+            traceback.print_exc()
+
+        time.sleep(0.5)  # optional cooldown to prevent worker timeout
 
     return {"Ans": state["Ans"] + all_answers}
 
