@@ -229,17 +229,17 @@ def srart_graph(state: StateGraphExecutor):
 
     for i in range(0, len(batch_inputs), batch_size):
         batch = batch_inputs[i:i + batch_size]
-        try:
-            print(f"⚙️ Processing batch {i // batch_size + 1} with {len(batch)} items", flush=True)
-            results = graph.batch(batch)
-            all_answers.extend([
-                {"role": "assistant", "content": res["messages"][-1].content}
-                for res in results
-            ])
-        except Exception as e:
-            import traceback
-            print("❌ Error in graph.batch:", e, flush=True)
-            traceback.print_exc()
+        print(f"⚙️ Batch {i // batch_size + 1}...", flush=True)
+        
+        for item in batch:
+            try:
+                result = graph.invoke(item)
+                all_answers.append({"role": "assistant", "content": result["messages"][-1].content})
+            except Exception as e:
+                import traceback
+                print("❌ Error during graph.invoke:", e)
+                traceback.print_exc()
+
 
         time.sleep(0.5)  # optional cooldown to prevent worker timeout
 
