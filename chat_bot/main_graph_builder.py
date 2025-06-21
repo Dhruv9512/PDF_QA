@@ -246,23 +246,114 @@ def srart_graph(state: StateGraphExecutor):
     return {"Ans": state["Ans"] + all_answers}
 
 
+
 def call_pdf_genrater(state):
-    import markdown
-    from xhtml2pdf import pisa
-    questions = state["messages"][0].content
+    import io, re, uuid
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+
+    # ✅ Get question texts
+   
+    questions = [msg["question"] for msg in state["messages"][0].content]
     answers = state["Ans"]
-    markdown_content = "# 📜 Question-Answer Report\n\n"
-    for i, a in enumerate(answers):
-        q_text = questions[i].get("question")
-        a_text = a.content if hasattr(a, 'content') else a
-        markdown_content += f"### Q{i+1}: {q_text}\n**A{i+1}:**\n{a_text}\n\n"
-    html = markdown.markdown(markdown_content)
+
+    print("Questions:", questions)
+    print("Answers:", answers)
     buffer = io.BytesIO()
-    pisa.CreatePDF(io.StringIO(html), dest=buffer)
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            rightMargin=1*inch, leftMargin=1*inch,
+                            topMargin=1*inch, bottomMargin=1*inch,
+                            encoding='utf-8')
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="Question", fontSize=12, leading=16, spaceAfter=6, fontName="Helvetica-Bold"))
+    styles.add(ParagraphStyle(name="Answer", fontSize=11, leading=14, spaceAfter=12, fontName="Helvetica"))
+
+    flowables = []
+    flowables.append(Paragraph("<b>Question-Answer Report</b>", styles["Title"]))
+    flowables.append(Spacer(1, 12))
+
+    def convert_markdown_table_to_data(md_table):
+        lines = [line.strip() for line in md_table.strip().splitlines() if line.strip()]
+        rows = []
+        for line in lines:
+            if re.match(r"^\|?[-: ]+\|[-| :]+$", line):
+                continue
+            cells = [cell.strip() for cell in line.strip('|').split('|')]
+            rows.append(cells)
+        return rows
+
+    def split_text_and_tables(text):
+        table_pattern = re.compile(r"((\|.+\|\s*\n)+)", re.MULTILINE)
+        parts = []
+        last_end = 0
+        for match in table_pattern.finditer(text):
+            start, end = match.span()
+            if start > last_end:
+                parts.append(("text", text[last_end:start].strip()))
+            parts.append(("table", match.group().strip()))
+            last_end = end
+        if last_end < len(text):
+            parts.append(("text", text[last_end:].strip()))
+        return parts
+
+    for i, a in enumerate(answers):
+        q_text = questions[i] if i < len(questions) else f"Question {i+1}"
+        a_text = a.content if hasattr(a, 'content') else a
+
+        flowables.append(Paragraph(f"<b>Q{i+1}:</b> {q_text}", styles["Question"]))
+        blocks = split_text_and_tables(a_text)
+
+        for block_type, content in blocks:
+            if block_type == "text":
+                for para in content.split('\n\n'):
+                    if para.strip():
+                        flowables.append(Paragraph(para.strip(), styles["Answer"]))
+            elif block_type == "table":
+                data = convert_markdown_table_to_data(content)
+                if data:
+                    table = Table(data, hAlign="LEFT")
+                    table.setStyle(TableStyle([
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 10),
+                        ("WORDWRAP", (0, 0), (-1, -1), True),
+                    ]))
+                    flowables.append(Spacer(1, 6))
+                    flowables.append(table)
+                    flowables.append(Spacer(1, 12))
+
+    flowables.append(Spacer(1, 24))
+    footer = Paragraph("<font size='9'><i>Tip: Download and open in WPS or Adobe Reader for best results.</i></font>", styles["Normal"])
+    flowables.append(footer)
+
+    doc.build(flowables)
     buffer.seek(0)
     pdf_bytes = buffer.getvalue()
-    resp = blob_store.put("PDF_Q&A/report_session.pdf", pdf_bytes, {"contentType": "application/pdf", "access": "public", "allowOverwrite": True})
+
+    filename = f"report_{uuid.uuid4().hex}.pdf"
+    resp = blob_store.put(
+        f"PDF_Q&A/{filename}",
+        pdf_bytes,
+        {
+            "contentType": "application/pdf",
+            "access": "public",
+            "allowOverwrite": True
+        }
+    )
+
     return {**state, "FinalPdf": resp["url"]}
+
+
+
+
+
+
 
 def Referal_PDF_to_Qdrant(state: StateGraphExecutor):
     docs = load_pdf(state["Referal"])

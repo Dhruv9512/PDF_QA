@@ -12,7 +12,6 @@ python-dotenv
 
 # === PDF Generation & Parsing ===
 PyPDF2
-xhtml2pdf
 reportlab
 markdown
 

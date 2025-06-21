@@ -1,11 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Your pdf</title>
-</head>
-<body>
-    <button><a href="{{ pdf }}">Download</a></button>
-</body>
+  </head>
+  <body>
+    <a
+      href="{{ pdf }}"
+      download="report_session.pdf"
+      style="
+        padding: 10px 15px;
+        background-color: purple;
+        color: white;
+        text-decoration: none;
+        border-radius: 5px;
+        font-weight: bold;
+      "
+    >
+      ⬇️ Download PDF
+    </a>
+  </body>
 </html>
