@@ -252,7 +252,7 @@ def srart_graph(state: StateGraphExecutor):
     questions = state["messages"][-1].content
     batch_inputs = [
         {"messages": [{"role": "user", "content": q["question"]}], "marks": str(q.get("marks"))}
-        for q in questions
+        for q in questions if q.get("question") and str(q.get("question")).strip()
     ]
 
     all_answers = []
@@ -263,6 +263,11 @@ def srart_graph(state: StateGraphExecutor):
         print(f"⚙️ Batch {i // batch_size + 1}...", flush=True)
         
         for item in batch:
+            # Skip if the question is empty
+            user_msg = item["messages"][0].get("content", "")
+            if not user_msg or not str(user_msg).strip():
+                print("⚠️ Skipping empty question in batch.")
+                continue
             try:
                 result = graph.invoke(item)
                 all_answers.append({"role": "assistant", "content": result["messages"][-1].content})
@@ -270,7 +275,6 @@ def srart_graph(state: StateGraphExecutor):
                 import traceback
                 print("❌ Error during graph.invoke:", e)
                 traceback.print_exc()
-
 
         time.sleep(0.5)  # optional cooldown to prevent worker timeout
 
