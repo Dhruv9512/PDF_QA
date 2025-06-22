@@ -18,7 +18,7 @@ class pdf(APIView):
             "QuePdf": QuePdf,
             "collection_name": collection_name,
             "Ans": [],
-            "messages": []
+            "messages": [],
         }
         try:
             output =main_graph.invoke(input_grapg)
