@@ -5,7 +5,7 @@ gunicorn
 
 # === Environment Variables ===
 python-dotenv
-
+python-decouple
 # === PDF Generation & Parsing ===
 PyPDF2
 reportlab
