@@ -1,4 +1,5 @@
 django
+djangorestframework
 
 # === Production Server ===
 gunicorn
