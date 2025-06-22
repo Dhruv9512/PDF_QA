@@ -26,3 +26,4 @@ def send_email_task(pdf_url):
         print("✅ Email sent successfully.")
     except Exception as e:
         print("Error:", str(e))
+

@@ -453,7 +453,8 @@ def qus_loading(state: StateGraphExecutor):
 
 def trigger_send_email_task(state: StateGraphExecutor):
     from .email_tasks import send_email_task
-    send_email_task(state["FinalPdf"])
+    # send_email_task(state["FinalPdf"])
+    send_email_task.apply_async(args=[state["FinalPdf"]])
 
 main_builder = StateGraph(StateGraphExecutor)
 main_builder.add_node("Referal_PDF_to_Qdrant", Referal_PDF_to_Qdrant)
