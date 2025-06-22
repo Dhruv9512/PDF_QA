@@ -249,34 +249,57 @@ class StateGraphExecutor(TypedDict):
 
 def srart_graph(state: StateGraphExecutor):
     import time
+
     questions = state["messages"][-1].content
+    # Filter out empty questions
     batch_inputs = [
         {"messages": [{"role": "user", "content": q["question"]}], "marks": str(q.get("marks"))}
         for q in questions if q.get("question") and str(q.get("question")).strip()
     ]
 
     all_answers = []
-    batch_size = 5  # You can adjust based on memory
+    batch_size = 2  # Reduce batch size to lower memory usage
 
     for i in range(0, len(batch_inputs), batch_size):
         batch = batch_inputs[i:i + batch_size]
         print(f"⚙️ Batch {i // batch_size + 1}...", flush=True)
-        
+
         for item in batch:
-            # Skip if the question is empty
             user_msg = item["messages"][0].get("content", "")
             if not user_msg or not str(user_msg).strip():
                 print("⚠️ Skipping empty question in batch.")
                 continue
             try:
-                result = graph.invoke(item)
+                # Add a timeout for graph.invoke to prevent hanging
+                import threading
+
+                result_container = {}
+
+                def run_graph():
+                    try:
+                        result_container["result"] = graph.invoke(item)
+                    except Exception as e:
+                        result_container["error"] = e
+
+                t = threading.Thread(target=run_graph)
+                t.start()
+                t.join(timeout=60)  # 60 seconds timeout per question
+
+                if t.is_alive():
+                    print("❌ Timeout during graph.invoke, skipping.")
+                    continue
+                if "error" in result_container:
+                    print("❌ Error during graph.invoke:", result_container["error"])
+                    continue
+
+                result = result_container["result"]
                 all_answers.append({"role": "assistant", "content": result["messages"][-1].content})
             except Exception as e:
                 import traceback
                 print("❌ Error during graph.invoke:", e)
                 traceback.print_exc()
 
-        time.sleep(0.5)  # optional cooldown to prevent worker timeout
+        time.sleep(0.2)  # Reduce cooldown to speed up, but keep some delay
 
     return {"Ans": state["Ans"] + all_answers}
 
