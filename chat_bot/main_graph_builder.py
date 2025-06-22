@@ -1,11 +1,10 @@
-import os, io, re, uuid
+import os,re, uuid
 from typing import Annotated
 from typing_extensions import TypedDict
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START, END
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.agents import Tool
 import vercelpy.blob_store as blob_store
 import json
@@ -77,7 +76,7 @@ def extract_content(msg):
 
 
 def upload_to_qdrant(documents, collection_name):
-    from langchain_community.vectorstores import Qdrant
+    from langchain_qdrant import QdrantVectorStore
     from langchain.text_splitter import RecursiveCharacterTextSplitter
     from qdrant_client.models import VectorParams, Distance
 
@@ -94,7 +93,7 @@ def upload_to_qdrant(documents, collection_name):
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     docs = splitter.split_documents(documents)
-    qdrant = Qdrant(client=qdrant_client, collection_name=collection_name, embeddings=embeddings)
+    qdrant = QdrantVectorStore(client=qdrant_client, collection_name=collection_name, embedding=embeddings)
     qdrant.add_documents(docs)
 
 def extract_questions(documents):
@@ -109,28 +108,55 @@ def extract_questions(documents):
     return all_questions
 
 
-
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful academic assistant."),
+    ("system", "You are a clear, student‑friendly academic assistant."),
     ("user", """
-Use retrieval_answer (~80%) and tavily_answer (~20%) to generate structured answers.
-Adjust depth based on marks: short (1–2), medium (3–5), detailed (>5). Include code if relevant.
-Format:
 ---
-**Question:** {question}
-**Marks:** {marks}
-**Retrieval-based Answer:** {retrieval_answer}
-**Tavily Answer:** {tavily_answer}
-**Combined Answer:**
-- Introduction
-- Diagram
-- Key Points
-- Explanation
-- Code Example
-- Conclusion
+
+ROLE:
+You are an expert educator who tailors explanations clearly for college students, whether concept-based or programming questions. If the question asks for a comparative (“difference between X and Y”), include a comparison table.
+
+INPUT:
+Question: {question}
+Marks: {marks}
+Retrieval Answer (core: ~80%): {retrieval_answer}
+Tavily Answer (supplement: ~20%): {tavily_answer}
+
+INSTRUCTIONS:
+1. Create a **Combined Answer** using ~80% from retrieval and ~20% from Tavily; do *not* display raw sources.
+2. If the question is:
+   - **Conceptual** (no code): Use this structure:
+     **🟢 Introduction**  
+     **🟢 Diagram** (one sentence or “No diagram needed”)  
+     **🟢Key Points**: Provide **6–8 very concise bullet headings**, each 2–3 words maximum.
+     **🟢 Explanation** (3–4 sentences per bullet)  
+     **🟢 Conclusion**
+   - **Coding**: Use this structure:
+     **🟢 Introduction**  
+     **🟢 Diagram** (if useful)  
+     **🟢 Key Points** (3–6 bullets)  
+     **🟢 Explanation** (1–2 sentences per bullet)  
+     **🟢 Full Code/Program**  
+     **🟢 Code Explanation**  
+     **🟢 Conclusion**
+   - **Difference** question (“difference between X and Y”): After the above, include:
+     **🟢 Comparison Table** with columns: No./ Feature / x / y, and ~8–9 rows covering key aspects.
+3. Style: friendly, clear, concise. Avoid jargon or briefly explain it.
+4. Length guidance:
+   - Introduction: 2–3 sentences  
+   - Key Points: 3–6 bullets  
+   - Explanation: 1–2 sentences per point  
+   - Code Explanation: short and clear  
+   - Table: ~8–9 compare rows, no prose descriptions
+5. **Only output the Combined Answer**—no question, no marks, no raw source text, no prompts.
+
 ---
+
+Provide the Combined Answer now.
 """)
 ])
+
+
 
 
 class State(TypedDict):
@@ -154,8 +180,13 @@ def run_llm_with_tools(state: State):
     return {"messages": state["messages"] + [message]}
 
 def get_retriever(embeddings):
-    from langchain_community.vectorstores import Qdrant
-    return Qdrant(client=get_qdrant_client(), collection_name="pdf_documents", embeddings=embeddings).as_retriever()
+    from langchain_qdrant import QdrantVectorStore
+    return QdrantVectorStore(client=get_qdrant_client(), collection_name="pdf_documents", embedding=embeddings).as_retriever(   search_type="mmr",
+        search_kwargs={
+            "k": 8,
+            "fetch_k": 40,
+            "lambda_mult": 0.5
+        })
 
 def ToolExecutor(state: State):
     from langchain_community.tools.tavily_search import TavilySearchResults
@@ -245,23 +276,18 @@ def srart_graph(state: StateGraphExecutor):
 
     return {"Ans": state["Ans"] + all_answers}
 
-
-
 def call_pdf_genrater(state):
-    import io, re, uuid
+    import io, re, uuid, html
     from reportlab.lib.pagesizes import A4
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
     from reportlab.lib.units import inch
 
-    # ✅ Get question texts
-   
+    # Extract questions and answers
     questions = [msg["question"] for msg in state["messages"][0].content]
     answers = state["Ans"]
 
-    print("Questions:", questions)
-    print("Answers:", answers)
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4,
                             rightMargin=1*inch, leftMargin=1*inch,
@@ -273,14 +299,45 @@ def call_pdf_genrater(state):
     styles.add(ParagraphStyle(name="Answer", fontSize=11, leading=14, spaceAfter=12, fontName="Helvetica"))
 
     flowables = []
-    flowables.append(Paragraph("<b>Question-Answer Report</b>", styles["Title"]))
+    flowables.append(Paragraph("<b>📜 Question-Answer Report</b>", styles["Title"]))
     flowables.append(Spacer(1, 12))
 
+    # ✅ Markdown parser that returns a list of Paragraphs
+    def parse_markdown_to_html_blocks(md_text, style):
+        lines = md_text.strip().split('\n')
+        paras = []
+
+        for line in lines:
+            raw = html.escape(line)
+
+            # Headings
+            raw = re.sub(r'^### (.*)$', r'<font size="13"><b>\1</b></font>', raw)
+            raw = re.sub(r'^## (.*)$', r'<font size="14"><b>\1</b></font>', raw)
+
+            # Bold/Italic/Code
+            raw = re.sub(r'\*\*\*(.+?)\*\*\*', r'<b><i>\1</i></b>', raw)
+            raw = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', raw)
+            raw = re.sub(r'\*(.+?)\*', r'<i>\1</i>', raw)
+            raw = re.sub(r'`(.+?)`', r'<font face="Courier">\1</font>', raw)
+
+            # Bullet point
+            if re.match(r'^\s*[-*] ', line):
+                text = re.sub(r'^[-*] ', '', raw)
+                paras.append(Paragraph(f'<bullet>&bull;</bullet> {text}', style))
+            elif re.match(r'^\s*\d+[.)] ', line):
+                text = re.sub(r'^\d+[.)] ', '', raw)
+                paras.append(Paragraph(f'<bullet>&bull;</bullet> {text}', style))
+            else:
+                paras.append(Paragraph(raw, style))
+
+        return paras
+
+    # Table handling
     def convert_markdown_table_to_data(md_table):
         lines = [line.strip() for line in md_table.strip().splitlines() if line.strip()]
         rows = []
         for line in lines:
-            if re.match(r"^\|?[-: ]+\|[-| :]+$", line):
+            if re.match(r"^\|?[-: ]+\|[-| :]+$", line):  # Skip separator row
                 continue
             cells = [cell.strip() for cell in line.strip('|').split('|')]
             rows.append(cells)
@@ -300,18 +357,21 @@ def call_pdf_genrater(state):
             parts.append(("text", text[last_end:].strip()))
         return parts
 
+    # Render each Q&A block
     for i, a in enumerate(answers):
         q_text = questions[i] if i < len(questions) else f"Question {i+1}"
         a_text = a.content if hasattr(a, 'content') else a
 
-        flowables.append(Paragraph(f"<b>Q{i+1}:</b> {q_text}", styles["Question"]))
+        flowables.append(Paragraph(f"<b>Q{i+1}:</b> {html.escape(q_text)}", styles["Question"]))
+
         blocks = split_text_and_tables(a_text)
 
         for block_type, content in blocks:
             if block_type == "text":
                 for para in content.split('\n\n'):
                     if para.strip():
-                        flowables.append(Paragraph(para.strip(), styles["Answer"]))
+                        parsed_paras = parse_markdown_to_html_blocks(para.strip(), styles["Answer"])
+                        flowables.extend(parsed_paras)
             elif block_type == "table":
                 data = convert_markdown_table_to_data(content)
                 if data:
@@ -328,17 +388,20 @@ def call_pdf_genrater(state):
                     flowables.append(table)
                     flowables.append(Spacer(1, 12))
 
+    # Footer tip
     flowables.append(Spacer(1, 24))
     footer = Paragraph("<font size='9'><i>Tip: Download and open in WPS or Adobe Reader for best results.</i></font>", styles["Normal"])
     flowables.append(footer)
 
+    # Build PDF
     doc.build(flowables)
     buffer.seek(0)
-    pdf_bytes = buffer.getvalue()
+    pdf_bytes = buffer.read()
 
+    # Upload to Vercel Blob
     filename = f"report_{uuid.uuid4().hex}.pdf"
     resp = blob_store.put(
-        f"PDF_Q&A/{filename}",
+        f"{filename}",
         pdf_bytes,
         {
             "contentType": "application/pdf",
@@ -348,12 +411,6 @@ def call_pdf_genrater(state):
     )
 
     return {**state, "FinalPdf": resp["url"]}
-
-
-
-
-
-
 
 def Referal_PDF_to_Qdrant(state: StateGraphExecutor):
     docs = load_pdf(state["Referal"])

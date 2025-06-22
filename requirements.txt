@@ -1,19 +1,12 @@
-# === Django & REST Framework ===
-django
-djangorestframework
-djangorestframework-simplejwt
-
 # === Production Server ===
 gunicorn
 
 # === Environment Variables ===
-python-decouple
 python-dotenv
 
 # === PDF Generation & Parsing ===
 PyPDF2
 reportlab
-markdown
 
 # === Background Tasks ===
 celery
@@ -26,9 +19,7 @@ langchain-core
 langchain-community
 langchain-google-genai
 langchain-groq
-langchain-ollama
 langchain-qdrant
-langchain-tavily
 langgraph 
 
 # === Vector Database ===
