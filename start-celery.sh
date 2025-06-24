@@ -9,4 +9,4 @@ done
 echo "🚀 Starting Celery Worker"
 source /opt/conda/etc/profile.d/conda.sh
 conda activate myenv
-celery -A PDF_QA worker --loglevel=info --pool=solo --max-tasks-per-child=5
+celery -A PDF_QA worker --loglevel=info --pool=solo
