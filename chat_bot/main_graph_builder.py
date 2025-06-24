@@ -86,6 +86,7 @@ def upload_to_qdrant(documents, collection_name):
     qdrant_client = get_qdrant_client()
     embeddings = get_embeddings()
 
+    # Create collection if not exists
     try:
         qdrant_client.get_collection(collection_name)
     except:
@@ -94,10 +95,26 @@ def upload_to_qdrant(documents, collection_name):
             vectors_config=VectorParams(size=768, distance=Distance.COSINE)
         )
 
+    # Split into chunks
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     docs = splitter.split_documents(documents)
+
+    # Initialize Qdrant vector store
     qdrant = QdrantVectorStore(client=qdrant_client, collection_name=collection_name, embedding=embeddings)
+
+    # Check similarity of first few chunks before uploading
+    for i, doc in enumerate(docs[:3]):  # Only check a few to save time
+        similar_results = qdrant.similarity_search(doc.page_content, k=1)
+        if similar_results:
+            score = similar_results[0].metadata.get('score', None)
+            if score is not None and score > 0.9:
+                print("⚠️ Similar content already exists in Qdrant. Skipping upload.")
+                return 
+
+    # If not found similar, upload
     qdrant.add_documents(docs)
+    print("✅ PDF uploaded successfully.")
+    
 
 def extract_questions(documents):
     all_questions = []
