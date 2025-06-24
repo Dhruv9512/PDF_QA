@@ -16,7 +16,7 @@ services:
   celery:
     build: .
     container_name: celery_worker
-    command: conda run --no-capture-output -n myenv celery -A PDF_QA worker --loglevel=info --pool=solo --max-tasks-per-child=5
+    command: ["/app/start-celery.sh"]
     depends_on:
       - redis
       - web

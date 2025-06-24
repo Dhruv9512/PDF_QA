@@ -5,9 +5,9 @@ FROM continuumio/miniconda3
 WORKDIR /app
 
 # Environment setup
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
-ENV PATH /opt/conda/envs/myenv/bin:$PATH
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PATH=/opt/conda/envs/myenv/bin:$PATH
 ENV PYTHONPATH=/app
 
 # Copy and install dependencies
@@ -16,8 +16,10 @@ RUN conda create -n myenv python=3.11 && \
     /opt/conda/envs/myenv/bin/pip install --upgrade pip && \
     /opt/conda/envs/myenv/bin/pip install -r requirements.txt
 
-# Copy the full app
+# Copy the full app and start script
 COPY . .
+COPY start-celery.sh /app/start-celery.sh
+RUN chmod +x /app/start-celery.sh
 
-# Default command (used for the web service)
+# Default command for the web service
 CMD ["conda", "run", "--no-capture-output", "-n", "myenv", "gunicorn", "PDF_QA.wsgi", "--workers", "3", "--worker-class", "gevent", "--timeout", "120", "--bind", "0.0.0.0:8000"]
