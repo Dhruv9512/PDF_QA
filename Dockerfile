@@ -4,19 +4,20 @@ FROM continuumio/miniconda3
 # Set working directory
 WORKDIR /app
 
-# Set environment variables
+# Environment setup
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 ENV PATH /opt/conda/envs/myenv/bin:$PATH
+ENV PYTHONPATH=/app
 
-# Copy requirements and install dependencies
+# Copy and install dependencies
 COPY requirements.txt .
 RUN conda create -n myenv python=3.11 && \
     /opt/conda/envs/myenv/bin/pip install --upgrade pip && \
     /opt/conda/envs/myenv/bin/pip install -r requirements.txt
 
-# Copy your project code
+# Copy the full app
 COPY . .
 
-# Default command (web server)
+# Default command
 CMD ["conda", "run", "--no-capture-output", "-n", "myenv", "gunicorn", "PDF_QA.wsgi", "--workers", "3", "--worker-class", "gevent", "--timeout", "120", "--bind", "0.0.0.0:8000"]
