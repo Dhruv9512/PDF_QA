@@ -1,8 +1,5 @@
-import html
-import io
-import threading
-import time
-import os,re, uuid,logging
+import logging
+import os,re, uuid
 from typing import Annotated
 from typing_extensions import TypedDict
 from langchain_core.messages import AnyMessage
@@ -12,9 +9,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain.agents import Tool
 import vercelpy.blob_store as blob_store
 import json
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 global pdf_id
 def get_qdrant_client():
     from qdrant_client import QdrantClient
@@ -253,117 +250,212 @@ class StateGraphExecutor(TypedDict):
     FinalPdf: str
     pdf_id: str
 
-def srart_graph(state):
+def srart_graph(state: StateGraphExecutor):
     try:
         logger.info("🤖 Starting answer generation graph...")
+        import time
+
         questions = state["messages"][-1].content
+        # Filter out empty questions
         batch_inputs = [
             {"messages": [{"role": "user", "content": q["question"]}], "marks": str(q.get("marks"))}
             for q in questions if q.get("question") and str(q.get("question")).strip()
         ]
-        logger.info(f"✅ Prepared {len(batch_inputs)} batch inputs.")
 
         all_answers = []
-        batch_size = 2
+        batch_size = 2  # Reduce batch size to lower memory usage
+
         for i in range(0, len(batch_inputs), batch_size):
-            logger.info(f"⚙️ Running batch {i // batch_size + 1}...")
             batch = batch_inputs[i:i + batch_size]
+            print(f"⚙️ Batch {i // batch_size + 1}...", flush=True)
 
             for item in batch:
                 user_msg = item["messages"][0].get("content", "")
-                if not user_msg.strip():
-                    logger.warning("⚠️ Skipping empty question.")
+                if not user_msg or not str(user_msg).strip():
+                    print("⚠️ Skipping empty question in batch.")
                     continue
+                try:
+                    # Add a timeout for graph.invoke to prevent hanging
+                    import threading
 
-                result_container = {}
+                    result_container = {}
 
-                def run_graph():
-                    try:
-                        result_container["result"] = graph.invoke(item)
-                    except Exception as e:
-                        result_container["error"] = e
+                    def run_graph():
+                        try:
+                            result_container["result"] = graph.invoke(item)
+                        except Exception as e:
+                            result_container["error"] = e
 
-                t = threading.Thread(target=run_graph)
-                t.start()
-                t.join(timeout=60)
+                    t = threading.Thread(target=run_graph)
+                    t.start()
+                    t.join(timeout=60)  # 60 seconds timeout per question
 
-                if t.is_alive():
-                    logger.error("❌ Timeout during graph.invoke")
-                    continue
-                if "error" in result_container:
-                    logger.exception("❌ Error during graph.invoke")
-                    continue
+                    if t.is_alive():
+                        print("❌ Timeout during graph.invoke, skipping.")
+                        continue
+                    if "error" in result_container:
+                        print("❌ Error during graph.invoke:", result_container["error"])
+                        continue
 
-                result = result_container["result"]
-                all_answers.append({"role": "assistant", "content": result["messages"][-1].content})
+                    result = result_container["result"]
+                    all_answers.append({"role": "assistant", "content": result["messages"][-1].content})
+                except Exception as e:
+                    import traceback
+                    print("❌ Error during graph.invoke:", e)
+                    traceback.print_exc()
 
-            time.sleep(0.2)
-
+            time.sleep(0.2)  # Reduce cooldown to speed up, but keep some delay
         logger.info(f"✅ Generated answers for {len(all_answers)} questions.")
         return {"Ans": state["Ans"] + all_answers}
-
     except Exception as e:
         logger.exception("❌ Failed in srart_graph")
         raise
 
 def call_pdf_genrater(state):
     try:
-        logger.info("📄 Generating PDF from Q&A...")
-        questions = [msg["question"] for msg in state["messages"][0].content]
-        answers = state["Ans"]
+            logger.info("📄 Generating PDF from Q&A...")
+            import io, re, uuid, html
+            from reportlab.lib.pagesizes import A4
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib import colors
+            from reportlab.lib.units import inch
 
-        buffer = io.BytesIO()
-        from reportlab.lib.pagesizes import A4
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib import colors
-        from reportlab.lib.units import inch
+            # Extract questions and answers
+            questions = [msg["question"] for msg in state["messages"][0].content]
+            answers = state["Ans"]
 
-        doc = SimpleDocTemplate(buffer, pagesize=A4,
-                                rightMargin=1*inch, leftMargin=1*inch,
-                                topMargin=1*inch, bottomMargin=1*inch,
-                                encoding='utf-8')
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=A4,
+                                    rightMargin=1*inch, leftMargin=1*inch,
+                                    topMargin=1*inch, bottomMargin=1*inch,
+                                    encoding='utf-8')
 
-        styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle(name="Question", fontSize=12, leading=16, spaceAfter=6, fontName="Helvetica-Bold"))
-        styles.add(ParagraphStyle(name="Answer", fontSize=11, leading=14, spaceAfter=12, fontName="Helvetica"))
+            styles = getSampleStyleSheet()
+            styles.add(ParagraphStyle(name="Question", fontSize=12, leading=16, spaceAfter=6, fontName="Helvetica-Bold"))
+            styles.add(ParagraphStyle(name="Answer", fontSize=11, leading=14, spaceAfter=12, fontName="Helvetica"))
 
-        flowables = []
-        flowables.append(Paragraph("<b>📜 Question-Answer Report</b>", styles["Title"]))
-        flowables.append(Spacer(1, 12))
+            flowables = []
+            flowables.append(Paragraph("<b>📜 Question-Answer Report</b>", styles["Title"]))
+            flowables.append(Spacer(1, 12))
 
-        for i, a in enumerate(answers):
-            q_text = questions[i] if i < len(questions) else f"Question {i+1}"
-            a_text = a.content if hasattr(a, 'content') else a
-            flowables.append(Paragraph(f"<b>Q{i+1}:</b> {html.escape(q_text)}", styles["Question"]))
-            for para in a_text.strip().split("\n\n"):
-                flowables.append(Paragraph(html.escape(para.strip()), styles["Answer"]))
+            # ✅ Markdown parser that returns a list of Paragraphs
+            def parse_markdown_to_html_blocks(md_text, style):
+                lines = md_text.strip().split('\n')
+                paras = []
 
-        flowables.append(Spacer(1, 24))
-        flowables.append(Paragraph("<font size='9'><i>Tip: Download and open in WPS or Adobe Reader for best results.</i></font>", styles["Normal"]))
+                for line in lines:
+                    raw = html.escape(line)
 
-        doc.build(flowables)
-        buffer.seek(0)
-        pdf_bytes = buffer.read()
+                    # Headings
+                    raw = re.sub(r'^### (.*)$', r'<font size="13"><b>\1</b></font>', raw)
+                    raw = re.sub(r'^## (.*)$', r'<font size="14"><b>\1</b></font>', raw)
 
-        logger.info("📤 Uploading PDF to Vercel Blob...")
-        filename = f"report_{uuid.uuid4().hex}.pdf"
-        resp = blob_store.put(filename, pdf_bytes, {
-            "contentType": "application/pdf",
-            "access": "public",
-            "allowOverwrite": True
-        })
+                    # Bold/Italic/Code
+                    raw = re.sub(r'\*\*\*(.+?)\*\*\*', r'<b><i>\1</i></b>', raw)
+                    raw = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', raw)
+                    raw = re.sub(r'\*(.+?)\*', r'<i>\1</i>', raw)
+                    raw = re.sub(r'`(.+?)`', r'<font face="Courier">\1</font>', raw)
 
-        logger.info(f"✅ PDF uploaded to: {resp['url']}")
-        return {**state, "FinalPdf": resp["url"]}
+                    # Bullet point
+                    if re.match(r'^\s*[-*] ', line):
+                        text = re.sub(r'^[-*] ', '', raw)
+                        paras.append(Paragraph(f'<bullet>&bull;</bullet> {text}', style))
+                    elif re.match(r'^\s*\d+[.)] ', line):
+                        text = re.sub(r'^\d+[.)] ', '', raw)
+                        paras.append(Paragraph(f'<bullet>&bull;</bullet> {text}', style))
+                    else:
+                        paras.append(Paragraph(raw, style))
+
+                return paras
+
+            # Table handling
+            def convert_markdown_table_to_data(md_table):
+                lines = [line.strip() for line in md_table.strip().splitlines() if line.strip()]
+                rows = []
+                for line in lines:
+                    if re.match(r"^\|?[-: ]+\|[-| :]+$", line):  # Skip separator row
+                        continue
+                    cells = [cell.strip() for cell in line.strip('|').split('|')]
+                    rows.append(cells)
+                return rows
+
+            def split_text_and_tables(text):
+                table_pattern = re.compile(r"((\|.+\|\s*\n)+)", re.MULTILINE)
+                parts = []
+                last_end = 0
+                for match in table_pattern.finditer(text):
+                    start, end = match.span()
+                    if start > last_end:
+                        parts.append(("text", text[last_end:start].strip()))
+                    parts.append(("table", match.group().strip()))
+                    last_end = end
+                if last_end < len(text):
+                    parts.append(("text", text[last_end:].strip()))
+                return parts
+
+            # Render each Q&A block
+            for i, a in enumerate(answers):
+                q_text = questions[i] if i < len(questions) else f"Question {i+1}"
+                a_text = a.content if hasattr(a, 'content') else a
+
+                flowables.append(Paragraph(f"<b>Q{i+1}:</b> {html.escape(q_text)}", styles["Question"]))
+
+                blocks = split_text_and_tables(a_text)
+
+                for block_type, content in blocks:
+                    if block_type == "text":
+                        for para in content.split('\n\n'):
+                            if para.strip():
+                                parsed_paras = parse_markdown_to_html_blocks(para.strip(), styles["Answer"])
+                                flowables.extend(parsed_paras)
+                    elif block_type == "table":
+                        data = convert_markdown_table_to_data(content)
+                        if data:
+                            table = Table(data, hAlign="LEFT")
+                            table.setStyle(TableStyle([
+                                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                                ("WORDWRAP", (0, 0), (-1, -1), True),
+                            ]))
+                            flowables.append(Spacer(1, 6))
+                            flowables.append(table)
+                            flowables.append(Spacer(1, 12))
+
+            # Footer tip
+            flowables.append(Spacer(1, 24))
+            footer = Paragraph("<font size='9'><i>Tip: Download and open in WPS or Adobe Reader for best results.</i></font>", styles["Normal"])
+            flowables.append(footer)
+
+            # Build PDF
+            doc.build(flowables)
+            buffer.seek(0)
+            pdf_bytes = buffer.read()
+
+            # Upload to Vercel Blob
+            filename = f"report_{uuid.uuid4().hex}.pdf"
+            resp = blob_store.put(
+                f"{filename}",
+                pdf_bytes,
+                {
+                    "contentType": "application/pdf",
+                    "access": "public",
+                    "allowOverwrite": True
+                }
+            )
+            logger.info(f"✅ PDF uploaded to: {resp['url']}")
+            return {**state, "FinalPdf": resp["url"]}
     except Exception as e:
         logger.exception("❌ Failed in call_pdf_genrater")
         raise
-def Referal_PDF_to_Qdrant(state):
+def Referal_PDF_to_Qdrant(state: StateGraphExecutor):
     try:
         logger.info("📥 Loading referral PDF and uploading to Qdrant...")
         docs = load_pdf(state["Referal"])
-        pdf_id = docs[0].metadata.get("pdf_id")
+        pdf_id= docs[0].metadata.get("pdf_id")
         upload_to_qdrant(docs, state["collection_name"])
         logger.info(f"✅ PDF uploaded to Qdrant with pdf_id: {pdf_id}")
         return {**state, "pdf_id": pdf_id}
@@ -372,7 +464,7 @@ def Referal_PDF_to_Qdrant(state):
         raise
 
 
-def qus_loading(state):
+def qus_loading(state: StateGraphExecutor):
     try:
         logger.info("🔍 Loading questions from question PDF...")
         docs = load_pdf(state["QuePdf"])
@@ -383,10 +475,11 @@ def qus_loading(state):
         logger.exception("❌ Failed in qus_loading")
         raise
 
-def trigger_send_email_task(state):
+def trigger_send_email_task(state: StateGraphExecutor):
     try:
         logger.info("📧 Sending email task...")
         from .email_tasks import send_email_task
+        # send_email_task(state["FinalPdf"])
         send_email_task.apply_async(args=[state["FinalPdf"]])
         logger.info("✅ Email task triggered.")
     except Exception as e:
