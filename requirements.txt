@@ -30,3 +30,5 @@ qdrant-client
 
 # === File Storage ===
 vercelpy
+
+gevent

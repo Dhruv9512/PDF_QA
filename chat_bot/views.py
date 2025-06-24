@@ -1,3 +1,4 @@
+import io
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.utils.decorators import method_decorator
@@ -15,7 +16,7 @@ class pdf(APIView):
         QuePdf = request.data.get("QuePdf")
         input_grapg = {
             # "Referal": io.BytesIO(Referal),
-            "QuePdf": QuePdf,
+            "QuePdf": io.BytesIO(QuePdf),
             "collection_name": collection_name,
             "Ans": [],
             "messages": [],
