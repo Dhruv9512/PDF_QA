@@ -4,8 +4,8 @@ from celery import Celery
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'PDF_QA.settings')
 
 app = Celery('PDF_QA')
+app.conf.broker_url = os.environ.get('CELERY_BROKER_URL')
 app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()  # This will autodiscover tasks in all installed apps
-app.conf.broker_url = os.environ.get('CELERY_BROKER_URL')
 # Optionally, force import your tasks module if autodiscover doesn't work:
 import chat_bot.email_tasks
