@@ -18,5 +18,5 @@ RUN conda create -n myenv python=3.11 && \
 # Copy your project code
 COPY . .
 
-# Default command (for web service)
+# Default command (web server)
 CMD ["conda", "run", "--no-capture-output", "-n", "myenv", "gunicorn", "PDF_QA.wsgi", "--workers", "3", "--worker-class", "gevent", "--timeout", "120", "--bind", "0.0.0.0:8000"]
