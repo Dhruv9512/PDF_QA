@@ -16,18 +16,13 @@ services:
   celery:
     build: .
     container_name: celery_worker
-    command: conda run --no-capture-output -n myenv celery -A Pixel worker --loglevel=info --pool=solo --max-tasks-per-child=5
+    command: conda run --no-capture-output -n myenv celery -A PDF_QA worker --loglevel=info --pool=solo --max-tasks-per-child=5
     depends_on:
       - redis
-      - django
+      - web
     env_file:
       - .env
     restart: always
-    deploy:
-      resources:
-        limits:
-          memory: 400M  # 🔹 Limit Celery memory usage
-
 
   redis:
     image: redis:alpine
