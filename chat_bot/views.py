@@ -16,7 +16,7 @@ class pdf(APIView):
         QuePdf = request.data.get("QuePdf")
         input_grapg = {
             # "Referal": io.BytesIO(Referal),
-            "QuePdf": io.BytesIO(QuePdf),
+            "QuePdf": QuePdf.read() if QuePdf else None,
             "collection_name": collection_name,
             "Ans": [],
             "messages": [],
