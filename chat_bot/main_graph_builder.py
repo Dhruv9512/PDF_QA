@@ -492,12 +492,6 @@ def trigger_send_email_task(state: StateGraphExecutor):
         from .email_tasks import send_email_task
         # send_email_task(state["FinalPdf"])
         send_email_task.apply_async(args=[state["FinalPdf"]])
-        final_pdf_url = state["FinalPdf"]
-        # Extract blob path from the URL
-        parsed = urlparse(final_pdf_url)
-        blob_path = parsed.path.lstrip("/")
-
-        blob_store.delete(blob_path)
         logger.info("✅ Email task triggered.")
     except Exception as e:
         logger.exception("❌ Failed in trigger_send_email_task")
