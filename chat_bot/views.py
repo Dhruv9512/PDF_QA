@@ -15,7 +15,7 @@ class pdf(APIView):
         Referal = request.FILES.get("Referal")
         QuePdf = request.FILES.get("QuePdf")
         input_grapg = {
-            # "Referal": io.BytesIO(Referal.read()) if Referal else None,
+            "Referal": io.BytesIO(Referal.read()) if Referal else None,
             "QuePdf": io.BytesIO(QuePdf.read()) if QuePdf else None,
             "collection_name": collection_name,
             "Ans": [],

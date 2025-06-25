@@ -1,4 +1,6 @@
+import hashlib
 import logging
+from urllib.parse import urlparse
 import os,re, uuid
 from typing import Annotated
 from typing_extensions import TypedDict
@@ -9,6 +11,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain.agents import Tool
 import vercelpy.blob_store as blob_store
 import json
+from .models import ReferalPDF
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,7 +43,8 @@ def load_pdf(pdf_bytes: bytes):
     from PyPDF2 import PdfReader
     from langchain.docstore.document import Document
     global pdf_id
-    pdf_id = str(uuid.uuid4())
+    pdf_id = str(hashlib.md5(pdf_bytes).hexdigest())
+    ReferalPDF.objects.create(pdf_id=pdf_id)
     reader = PdfReader(pdf_bytes)
     return [Document(page_content=p.extract_text(), metadata={"page": i+1, "pdf_id": pdf_id}) for i, p in enumerate(reader.pages)]
 
@@ -456,6 +460,9 @@ def Referal_PDF_to_Qdrant(state: StateGraphExecutor):
         logger.info("📥 Loading referral PDF and uploading to Qdrant...")
         docs = load_pdf(state["Referal"])
         pdf_id= docs[0].metadata.get("pdf_id")
+        All_pdf_id=ReferalPDF.objects.all()
+        if pdf_id in [pdf.pdf_id for pdf in All_pdf_id]:
+            return {**state, "pdf_id": pdf_id}
         upload_to_qdrant(docs, state["collection_name"])
         logger.info(f"✅ PDF uploaded to Qdrant with pdf_id: {pdf_id}")
         return {**state, "pdf_id": pdf_id}
@@ -481,6 +488,12 @@ def trigger_send_email_task(state: StateGraphExecutor):
         from .email_tasks import send_email_task
         # send_email_task(state["FinalPdf"])
         send_email_task.apply_async(args=[state["FinalPdf"]])
+        final_pdf_url = state["FinalPdf"]
+        # Extract blob path from the URL
+        parsed = urlparse(final_pdf_url)
+        blob_path = parsed.path.lstrip("/")
+
+        blob_store.delete(blob_path)
         logger.info("✅ Email task triggered.")
     except Exception as e:
         logger.exception("❌ Failed in trigger_send_email_task")
@@ -492,6 +505,7 @@ main_builder.add_node("qus_loading", qus_loading)
 main_builder.add_node("graph", srart_graph)
 main_builder.add_node("pdf", call_pdf_genrater)
 main_builder.add_node("send_mail", trigger_send_email_task)
+main_builder.add_edge(START, "Referal_PDF_to_Qdrant")
 main_builder.add_edge(START, "qus_loading")
 main_builder.add_edge("qus_loading", "graph")
 main_builder.add_edge("graph", "pdf")

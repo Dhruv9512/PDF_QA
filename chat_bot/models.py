@@ -1,9 +1,7 @@
 from django.db import models
 
 # Create your models here.
-class Ans_pdf(models.Model):
-    question = models.TextField()
-    answer = models.TextField()
-
+class ReferalPDF(models.Model):
+    pdf_id = models.CharField(max_length=150)
     def __str__(self):
-        return self.question[:50]  
+        return self.pdf_id  

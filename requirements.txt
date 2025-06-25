@@ -32,3 +32,4 @@ qdrant-client
 vercelpy
 
 gevent
+dj-database-url
