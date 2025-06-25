@@ -43,7 +43,10 @@ def load_pdf(pdf_bytes: bytes):
     from PyPDF2 import PdfReader
     from langchain.docstore.document import Document
     global pdf_id
-    pdf_id = str(hashlib.md5(pdf_bytes).hexdigest())
+    # Read bytes for hashing
+    pdf_bytes.seek(0)
+    raw_bytes = pdf_bytes.read()
+    pdf_id = str(hashlib.md5(raw_bytes).hexdigest())
     ReferalPDF.objects.create(pdf_id=pdf_id)
     pdf_bytes.seek(0)
     reader = PdfReader(pdf_bytes)
