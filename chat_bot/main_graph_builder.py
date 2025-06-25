@@ -1,4 +1,5 @@
 import hashlib
+import io
 import logging
 from urllib.parse import urlparse
 import os,re, uuid
@@ -45,7 +46,7 @@ def load_pdf(pdf_bytes: bytes):
     global pdf_id
     pdf_id = str(hashlib.md5(pdf_bytes).hexdigest())
     ReferalPDF.objects.create(pdf_id=pdf_id)
-    reader = PdfReader(pdf_bytes)
+    reader = PdfReader(io.BytesIO(pdf_bytes))
     return [Document(page_content=p.extract_text(), metadata={"page": i+1, "pdf_id": pdf_id}) for i, p in enumerate(reader.pages)]
 
 
