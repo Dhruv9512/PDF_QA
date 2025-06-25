@@ -1,8 +1,12 @@
 # Base image with Conda
 FROM continuumio/miniconda3
 
-# Install netcat for Redis check
-RUN apt-get update && apt-get install -y netcat-openbsd && rm -rf /var/lib/apt/lists/*
+# Install system dependencies: netcat, PostgreSQL client libraries, and gcc
+RUN apt-get update && apt-get install -y \
+    netcat-openbsd \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
