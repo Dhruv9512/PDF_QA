@@ -22,7 +22,8 @@ def send_email_task(pdf_url):
         )
 
         print("✅ Email sent successfully. send_mail returned:", result)
+        return {"status": "success", "result": result}  # 🔧 Must return something!
     except Exception as e:
         print("❌ Email sending failed:", str(e))
-
+        return {"status": "failed", "error": str(e)}  # 🔧 Must return something!
 

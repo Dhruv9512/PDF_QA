@@ -39,7 +39,13 @@ def get_groq_llm():
     from langchain_groq import ChatGroq
     return ChatGroq(model="llama3-8b-8192")
 
-def load_pdf(pdf_bytes: bytes):
+def Que_load_pdf(pdf_bytes: bytes):
+    from PyPDF2 import PdfReader
+    from langchain.docstore.document import Document
+    reader = PdfReader(pdf_bytes)
+    return [Document(page_content=p.extract_text(), metadata={"page": i+1}) for i, p in enumerate(reader.pages)]
+
+def Referal_load_pdf(pdf_bytes: bytes):
     from PyPDF2 import PdfReader
     from langchain.docstore.document import Document
     global pdf_id
@@ -47,12 +53,9 @@ def load_pdf(pdf_bytes: bytes):
     pdf_bytes.seek(0)
     raw_bytes = pdf_bytes.read()
     pdf_id = str(hashlib.md5(raw_bytes).hexdigest())
-    ReferalPDF.objects.create(pdf_id=pdf_id)
     pdf_bytes.seek(0)
     reader = PdfReader(pdf_bytes)
     return [Document(page_content=p.extract_text(), metadata={"page": i+1, "pdf_id": pdf_id}) for i, p in enumerate(reader.pages)]
-
-
 
 def extract_content(msg):
     from langchain_core.messages import BaseMessage
@@ -190,14 +193,33 @@ def run_llm_with_tools(state: State):
     message = result.generations[0][0].message  # Extract the message
     return {"messages": state["messages"] + [message]}
 
-def get_retriever(embeddings):
+def get_retriever(embeddings, pdf_id=None):
     from langchain_qdrant import QdrantVectorStore
-    return QdrantVectorStore(client=get_qdrant_client(), collection_name="pdf_documents", embedding=embeddings).as_retriever(   search_type="mmr",
-        search_kwargs={
-            "k": 8,
-            "fetch_k": 40,
-            "lambda_mult": 0.5
-        })
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+    qdrant = QdrantVectorStore(
+        client=get_qdrant_client(),
+        collection_name="pdf_documents",
+        embedding=embeddings
+    )
+
+    # ✅ Apply filtering during retrieval
+    search_kwargs = {
+        "k": 8,
+        "fetch_k": 40,
+        "lambda_mult": 0.5
+    }
+
+    if pdf_id:
+        search_kwargs["filter"] = Filter(
+            must=[
+                FieldCondition(key="pdf_id", match=MatchValue(value=pdf_id))
+            ]
+        )
+
+    return qdrant.as_retriever(search_type="mmr", search_kwargs=search_kwargs)
+
+
 
 def ToolExecutor(state: State):
     from langchain_community.tools.tavily_search import TavilySearchResults
@@ -462,11 +484,14 @@ def call_pdf_genrater(state):
 def Referal_PDF_to_Qdrant(state: StateGraphExecutor):
     try:
         logger.info("📥 Loading referral PDF and uploading to Qdrant...")
-        docs = load_pdf(state["Referal"])
-        pdf_id= docs[0].metadata.get("pdf_id")
-        All_pdf_id=ReferalPDF.objects.all()
-        if pdf_id in [pdf.pdf_id for pdf in All_pdf_id]:
+        docs = Referal_load_pdf(state["Referal"])
+        pdf_id = docs[0].metadata.get("pdf_id")
+
+        if ReferalPDF.objects.filter(pdf_id__iexact=pdf_id).exists():
+            logger.info(f"⏭️ PDF with id {pdf_id} already exists. Skipping upload.")
             return {**state, "pdf_id": pdf_id}
+
+        ReferalPDF.objects.create(pdf_id=pdf_id)
         upload_to_qdrant(docs, state["collection_name"])
         logger.info(f"✅ PDF uploaded to Qdrant with pdf_id: {pdf_id}")
         return {**state, "pdf_id": pdf_id}
@@ -478,7 +503,7 @@ def Referal_PDF_to_Qdrant(state: StateGraphExecutor):
 def qus_loading(state: StateGraphExecutor):
     try:
         logger.info("🔍 Loading questions from question PDF...")
-        docs = load_pdf(state["QuePdf"])
+        docs = Que_load_pdf(state["QuePdf"])
         all_Ques = extract_questions(docs)
         
         return {"messages": state["messages"] + [{"role": "assistant", "content": all_Ques}]}
@@ -504,7 +529,7 @@ main_builder.add_node("graph", srart_graph)
 main_builder.add_node("pdf", call_pdf_genrater)
 main_builder.add_node("send_mail", trigger_send_email_task)
 main_builder.add_edge(START, "Referal_PDF_to_Qdrant")
-main_builder.add_edge(START, "qus_loading")
+main_builder.add_edge("Referal_PDF_to_Qdrant", "qus_loading") 
 main_builder.add_edge("qus_loading", "graph")
 main_builder.add_edge("graph", "pdf")
 main_builder.add_edge("pdf", "send_mail")
