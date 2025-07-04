@@ -27,7 +27,7 @@ class pdf(APIView):
         try:
             output = main_graph.invoke(input_grapg)
             pdf_id = output.get("pdf_id")
-            pdf_url = output.get("pdf_url")
+            pdf_url = output.get("FinalPdf")
             return Response({"message": "Process started", "status": "success", "pdf_id": pdf_id, "pdf_url": pdf_url}, status=200)
         except Exception as e:
             return Response({"error": str(e)}, status=500)
