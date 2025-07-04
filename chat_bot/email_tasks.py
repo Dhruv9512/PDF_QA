@@ -5,9 +5,11 @@ from django.conf import settings
 
 
 @shared_task
-def send_email_task(pdf_url):
-    print("📤 Sending email for PDF:", pdf_url)
+def send_email_task(data):
+   
     try:
+        pdf_url = data.get("pdf_url")
+        email = data.get("email")
         subject = "📄 Your PDF answer"
         context = {"pdf": pdf_url}
         html_message = render_to_string('pdf/pdf.html', context)
@@ -16,7 +18,7 @@ def send_email_task(pdf_url):
             subject=subject,
             message="",
             from_email=settings.EMAIL_HOST_USER,
-            recipient_list=["dhruvsharma56780@gmail.com"],
+            recipient_list=[email],
             fail_silently=False,
             html_message=html_message
         )

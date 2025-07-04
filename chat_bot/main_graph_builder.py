@@ -279,6 +279,7 @@ class StateGraphExecutor(TypedDict):
     collection_name: str
     FinalPdf: str
     pdf_id: str
+    email: str
 
 def srart_graph(state: StateGraphExecutor):
     try:
@@ -516,7 +517,11 @@ def trigger_send_email_task(state: StateGraphExecutor):
         logger.info("📧 Sending email task...")
         from .email_tasks import send_email_task
         # send_email_task(state["FinalPdf"])
-        send_email_task.apply_async(args=[state["FinalPdf"]])
+        data={
+            "pdf_url": state["FinalPdf"],
+            "email": state["email"]
+        }
+        send_email_task.apply_async(args=[data])
         logger.info("✅ Email task triggered.")
     except Exception as e:
         logger.exception("❌ Failed in trigger_send_email_task")
