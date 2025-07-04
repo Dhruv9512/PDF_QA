@@ -14,7 +14,7 @@ class pdf(APIView):
     def post(self, request):
         Referal = request.FILES.get("Referal")
         QuePdf = request.FILES.get("QuePdf")
-        email = request.FILES.get("email")
+        email = request.get("email")
         input_grapg = {
             "Referal": io.BytesIO(Referal.read()) if Referal else None,
             "QuePdf": io.BytesIO(QuePdf.read()) if QuePdf else None,
