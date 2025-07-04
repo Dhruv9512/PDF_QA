@@ -14,7 +14,8 @@ class pdf(APIView):
     def post(self, request):
         Referal = request.FILES.get("Referal")
         QuePdf = request.FILES.get("QuePdf")
-        email = request.get("email")
+        email = request.data.get("email")
+
         input_grapg = {
             "Referal": io.BytesIO(Referal.read()) if Referal else None,
             "QuePdf": io.BytesIO(QuePdf.read()) if QuePdf else None,
@@ -30,3 +31,5 @@ class pdf(APIView):
             return Response({"message": "Process started", "status": "success", "pdf_id": pdf_id, "pdf_url": pdf_url}, status=200)
         except Exception as e:
             return Response({"error": str(e)}, status=500)
+        
+

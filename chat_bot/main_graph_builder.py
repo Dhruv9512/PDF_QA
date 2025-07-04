@@ -483,6 +483,9 @@ def call_pdf_genrater(state):
         logger.exception("❌ Failed in call_pdf_genrater")
         raise
 def Referal_PDF_to_Qdrant(state: StateGraphExecutor):
+    if not state.get("Referal"):
+        logger.info("🔍 No referral PDF provided. Skipping upload to Qdrant.")
+        return {**state, "pdf_id": None}
     try:
         logger.info("📥 Loading referral PDF and uploading to Qdrant...")
         docs = Referal_load_pdf(state["Referal"])
