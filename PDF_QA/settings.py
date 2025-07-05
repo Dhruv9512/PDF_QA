@@ -208,11 +208,18 @@ import os
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {name} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'file': {
             'level': 'DEBUG',
             'class': 'logging.FileHandler',
             'filename': os.path.join(BASE_DIR, 'debug.log'),
+            'formatter': 'verbose',
         },
     },
     'loggers': {
@@ -220,6 +227,11 @@ LOGGING = {
             'handlers': ['file'],
             'level': 'DEBUG',
             'propagate': True,
+        },
+        'django.utils.autoreload': {
+            'handlers': ['file'],
+            'level': 'WARNING',  # Silence most autoreload debug messages
+            'propagate': False,
         },
     },
 }

@@ -112,7 +112,11 @@ def upload_to_qdrant(documents, collection_name):
 
 def extract_questions(documents):
     all_questions = []
-    pattern = re.compile(r'(?i)(Q\d+\.|^\d+\.)\s*(.*?)(?=(Q\d+\.|^\d+\.)|$)', re.DOTALL | re.MULTILINE)
+    pattern = re.compile(
+        r'(?i)(?:❓?\s*)?(?:Question|Q)?\s*(\d+)[\.:)\s-]*\s*\n?(.*?)(?=(?:❓?\s*)?(?:Question|Q)?\s*\d+[\.:)\s-]*\s*\n|$)',
+        re.DOTALL | re.MULTILINE
+    )
+
     for doc in documents:
         for match in pattern.findall(doc.page_content):
             question_text = match[1].strip()
@@ -180,17 +184,21 @@ class State(TypedDict):
 def run_llm_with_tools(state: State):
     from langchain_community.tools.tavily_search import TavilySearchResults
     embeddings = get_embeddings()
-    retriever = get_retriever(embeddings)
+    pdf_id = state.get("pdf_id")
+    
+    tools = []
     llm = get_groq_llm()
-    tools = [
-        Tool.from_function(retriever.invoke, name="RAG", description="Answer questions from PDF."),
-        Tool.from_function(TavilySearchResults().invoke, name="TavilySearch", description="Web search tool.")
-    ]
-    llm_with_tools = llm.bind_tools(tools)
 
-    # Use .generate() to avoid structured tool call format
+    # ✅ Add RAG tool only if pdf_id exists
+    if pdf_id:
+        retriever = get_retriever(embeddings, pdf_id=pdf_id)
+        tools.append(Tool.from_function(retriever.invoke, name="RAG", description="Answer questions from PDF."))
+
+    tools.append(Tool.from_function(TavilySearchResults().invoke, name="TavilySearch", description="Web search tool."))
+
+    llm_with_tools = llm.bind_tools(tools)
     result = llm_with_tools.generate([state["messages"]])
-    message = result.generations[0][0].message  # Extract the message
+    message = result.generations[0][0].message
     return {"messages": state["messages"] + [message]}
 
 def get_retriever(embeddings, pdf_id=None):
@@ -223,19 +231,20 @@ def get_retriever(embeddings, pdf_id=None):
 
 def ToolExecutor(state: State):
     from langchain_community.tools.tavily_search import TavilySearchResults
-    retriever = get_retriever(get_embeddings())
-    rag_tool = Tool.from_function(retriever.invoke, name="RAG", description="PDF Tool")
-    tavily_tool = Tool.from_function(TavilySearchResults().invoke, name="Tavily", description="Web Search")
 
     query = state["messages"][-2].content
     results = []
+    if state.get("pdf_id"):
+        try:  
+            retriever = get_retriever(get_embeddings(), pdf_id=state["pdf_id"])
+            rag_tool = Tool.from_function(retriever.invoke, name="RAG", description="PDF Tool")
+            rag = rag_tool.invoke(query)
+            rag_content = "\n\n".join([doc.page_content for doc in rag])
+            results.append({"role": "assistant", "content": rag_content})
+        except Exception as e:
+            print("RAG Error:", e)
     try:
-        rag = rag_tool.invoke(query)
-        rag_content = "\n\n".join([doc.page_content for doc in rag])
-        results.append({"role": "assistant", "content": rag_content})
-    except Exception as e:
-        print("RAG Error:", e)
-    try:
+        tavily_tool = Tool.from_function(TavilySearchResults().invoke, name="Tavily", description="Web Search")
         tavily = tavily_tool.invoke(query)
         results.append({"role": "assistant", "content": tavily})
     except Exception as e:
@@ -250,7 +259,6 @@ def format_answer(state: State):
     retrieval_answer = extract_content(state["messages"][-2])
     tavily_answer = extract_content(state["messages"][-1])
     marks = state["marks"] if isinstance(state["marks"], int) else extract_content(state["marks"])
-
     input_data = {
         "question": question,
         "marks": marks,
@@ -289,9 +297,14 @@ def srart_graph(state: StateGraphExecutor):
         questions = state["messages"][-1].content
         # Filter out empty questions
         batch_inputs = [
-            {"messages": [{"role": "user", "content": q["question"]}], "marks": str(q.get("marks"))}
+            {
+                "messages": [{"role": "user", "content": q["question"]}],
+                "marks": str(q.get("marks")),
+                "pdf_id": state.get("pdf_id")  # ✅ include this line
+            }
             for q in questions if q.get("question") and str(q.get("question")).strip()
         ]
+
 
         all_answers = []
         batch_size = 2  # Reduce batch size to lower memory usage
