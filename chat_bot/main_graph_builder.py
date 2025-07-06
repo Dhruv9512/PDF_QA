@@ -216,15 +216,15 @@ INSTRUCTIONS:
 2. If the question is:
    - **Conceptual** (no code): Use this structure:
      **🟢 Introduction**  
-     **🟢 Diagram** (one sentence or “No diagram needed”)  
+     **🟢 Diagram** (if possible)   
      **🟢Key Points**: Provide **6–8 very concise bullet headings**, each 2–3 words maximum.
      **🟢 Explanation** (3–4 sentences per bullet)  
      **🟢 Conclusion**
    - **Coding**: Use this structure:
      **🟢 Introduction**  
-     **🟢 Diagram** (if useful)  
-     **🟢 Key Points** (3–6 bullets)  
-     **🟢 Explanation** (1–2 sentences per bullet)  
+     **🟢 Diagram** (if possible)  
+     **🟢 Key Points** (2–4 bullets if needed)  
+     **🟢 Explanation** (1–2 sentences per bullet if needed)  
      **🟢 Full Code/Program**  
      **🟢 Code Explanation**  
      **🟢 Conclusion**
