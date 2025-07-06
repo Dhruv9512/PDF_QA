@@ -110,20 +110,62 @@ def upload_to_qdrant(documents, collection_name):
     qdrant = QdrantVectorStore(client=qdrant_client, collection_name=collection_name, embedding=embeddings)
     qdrant.add_documents(docs)
 
+# Extract questions from documents
 def extract_questions(documents):
     all_questions = []
-    pattern = re.compile(
-        r'(?i)(?:❓?\s*)?(?:Question|Q)?\s*(\d+)[\.:)\s-]*\s*\n?(.*?)(?=(?:❓?\s*)?(?:Question|Q)?\s*\d+[\.:)\s-]*\s*\n|$)',
-        re.DOTALL | re.MULTILINE
+
+    numbered_question_pattern = re.compile(
+        r'(?i)(?:Question|Q)?\s*(\d+)[\.\:\)\s-]*\s*(.*)', re.IGNORECASE
     )
+    bullet_pattern = re.compile(r'^\s*(?:[-*●•])\s+(.*)')
 
     for doc in documents:
-        for match in pattern.findall(doc.page_content):
-            question_text = match[1].strip()
-            marks_match = re.search(r'\[(\d+)\s*(marks?)?\]', question_text, re.IGNORECASE)
-            marks = int(marks_match.group(1)) if marks_match else None
-            all_questions.append({"question": question_text, "marks": marks, **doc.metadata})
+        lines = doc.page_content.split('\n')
+        current_question = ""
+        current_marks = None
+        page = doc.metadata.get("page", 0)
+
+        for line in lines:
+            line = line.strip()
+
+            if not line:
+                continue
+
+            number_match = numbered_question_pattern.match(line)
+            bullet_match = bullet_pattern.match(line)
+
+            if number_match:
+                # Save previous question
+                if current_question:
+                    all_questions.append({
+                        "question": current_question.strip(),
+                        "marks": current_marks,
+                        "page": page
+                    })
+
+                current_question = number_match.group(2).strip()
+                marks_match = re.search(r'\[(\d+)\s*marks?\]', current_question, re.IGNORECASE)
+                current_marks = int(marks_match.group(1)) if marks_match else None
+
+            elif bullet_match and current_question:
+                bullet_text = bullet_match.group(1).strip()
+                current_question += f"\n• {bullet_text}"
+
+            else:
+                # If not a bullet or numbered but previous question exists, maybe it's continuation
+                if current_question:
+                    current_question += " " + line
+
+        # Final append at end of doc
+        if current_question:
+            all_questions.append({
+                "question": current_question.strip(),
+                "marks": current_marks,
+                "page": page
+            })
+
     return all_questions
+
 
 
 prompt = ChatPromptTemplate.from_messages([
@@ -364,6 +406,8 @@ def call_pdf_genrater(state):
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib import colors
             from reportlab.lib.units import inch
+            from reportlab.platypus import Paragraph
+            from html import escape
 
             # Extract questions and answers
             questions = [msg["question"] for msg in state["messages"][0].content]
@@ -383,27 +427,43 @@ def call_pdf_genrater(state):
             flowables.append(Paragraph("<b>📜 Question-Answer Report</b>", styles["Title"]))
             flowables.append(Spacer(1, 12))
 
-            # ✅ Markdown parser that returns a list of Paragraphs
+           
+        
+            
+            def escape_but_keep_braces(text):
+                text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                return text
+
             def parse_markdown_to_html_blocks(md_text, style):
                 lines = md_text.strip().split('\n')
                 paras = []
 
                 for line in lines:
-                    raw = html.escape(line)
+                    if not line.strip():
+                        continue
 
-                    # Headings
-                    raw = re.sub(r'^### (.*)$', r'<font size="13"><b>\1</b></font>', raw)
-                    raw = re.sub(r'^## (.*)$', r'<font size="14"><b>\1</b></font>', raw)
+                    raw = escape_but_keep_braces(line)
 
-                    # Bold/Italic/Code
+                    # Step 1: Temporarily extract inline code blocks
+                    code_blocks = []
+                    def replace_code(match):
+                        code_blocks.append(match.group(1))
+                        return f"__CODE_{len(code_blocks) - 1}__"
+                    raw = re.sub(r'`(.+?)`', replace_code, raw)
+
+                    # Step 2: Apply markdown formatting (bold/italic)
                     raw = re.sub(r'\*\*\*(.+?)\*\*\*', r'<b><i>\1</i></b>', raw)
                     raw = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', raw)
-                    raw = re.sub(r'\*(.+?)\*', r'<i>\1</i>', raw)
-                    raw = re.sub(r'`(.+?)`', r'<font face="Courier">\1</font>', raw)
+                    raw = re.sub(r'\*(?!\s)(.+?)\*', r'<i>\1</i>', raw)
 
-                    # Bullet point
-                    if re.match(r'^\s*[-*] ', line):
-                        text = re.sub(r'^[-*] ', '', raw)
+                    # Step 3: Re-insert the code blocks safely
+                    for i, code in enumerate(code_blocks):
+                        code_escaped = escape_but_keep_braces(code)
+                        raw = raw.replace(f"__CODE_{i}__", f'<font face="Courier">{code_escaped}</font>')
+
+                    # Step 4: Add bullet or numbered list
+                    if re.match(r'^\s*[-*•●] ', line):
+                        text = re.sub(r'^[-*•●] ', '', raw)
                         paras.append(Paragraph(f'<bullet>&bull;</bullet> {text}', style))
                     elif re.match(r'^\s*\d+[.)] ', line):
                         text = re.sub(r'^\d+[.)] ', '', raw)
@@ -412,6 +472,9 @@ def call_pdf_genrater(state):
                         paras.append(Paragraph(raw, style))
 
                 return paras
+
+
+
 
             # Table handling
             def convert_markdown_table_to_data(md_table):
