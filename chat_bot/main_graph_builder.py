@@ -114,8 +114,8 @@ def upload_to_qdrant(documents, collection_name):
 def extract_questions(documents):
     def estimate_marks(question):
         mark_estimation_prompt = ChatPromptTemplate.from_messages([
-                ("system", "You are an academic evaluator."),
-                ("user", """
+            ("system", "You are an academic evaluator."),
+            ("user", """
             Estimate appropriate marks (in a number only) for the following question, assuming it's part of a college-level paper.
 
             Question: {question}
@@ -125,17 +125,20 @@ def extract_questions(documents):
             - Explanation-based or reasoning: 4–5 marks
             - Medium difficulty coding or multi-part logic: 6–8 marks
             - Full program or deep comparison: 10 marks
-            Just return a number only, no text.
+
+            Just return a number only. No extra words.
             """)
-            ])
-        llm = get_llm()
+                    ])
+
+        llm = get_llm()  
         chain = mark_estimation_prompt | llm
         result = chain.invoke({"question": question})
         try:
-            return int(result.content.strip())
-        except ValueError:
-            # If parsing fails, return None
-            return 5
+            return int(re.search(r'\d+', result.content.strip()).group())
+        except Exception:
+            return 5  # default fallback
+            
+
     all_questions = []
 
     numbered_question_pattern = re.compile(
