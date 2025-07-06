@@ -112,6 +112,30 @@ def upload_to_qdrant(documents, collection_name):
 
 # Extract questions from documents
 def extract_questions(documents):
+    def estimate_marks(question):
+        mark_estimation_prompt = ChatPromptTemplate.from_messages([
+                ("system", "You are an academic evaluator."),
+                ("user", """
+            Estimate appropriate marks (in a number only) for the following question, assuming it's part of a college-level paper.
+
+            Question: {question}
+
+            Guidelines:
+            - Short definition or fact: 2–3 marks
+            - Explanation-based or reasoning: 4–5 marks
+            - Medium difficulty coding or multi-part logic: 6–8 marks
+            - Full program or deep comparison: 10 marks
+            Just return a number only, no text.
+            """)
+            ])
+        llm = get_llm()
+        chain = mark_estimation_prompt | llm
+        result = chain.invoke({"question": question})
+        try:
+            return int(result.content.strip())
+        except ValueError:
+            # If parsing fails, return None
+            return 5
     all_questions = []
 
     numbered_question_pattern = re.compile(
@@ -137,6 +161,8 @@ def extract_questions(documents):
             if number_match:
                 # Save previous question
                 if current_question:
+                    if current_marks is None:
+                        current_marks = estimate_marks(current_question)
                     all_questions.append({
                         "question": current_question.strip(),
                         "marks": current_marks,
